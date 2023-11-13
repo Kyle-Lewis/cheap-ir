@@ -2,11 +2,11 @@
 
 This repo contains tools and training scripts for fine tuning and compressing re-ranking models for information retrieval (IR) in two stage retrieval systems. My goals are to explore the limits of applying pruning to re-ranking models, and IR models generally. This is of particular interest recently with this family of models providing inputs to retrieval augmented generation systems.
 
-The table below is a quick summary of my results. In order to iterate quickly with my initial experiments I have so far only done continued pruning runs from the distilbert model, and I'm planning to do a set of runs for roberta-base in the future. I selected pruned checkpoints that kept NDCG roughly within 90% of the unpruned checkpoint's score.
+The table below is a quick summary of my results. In order to iterate quickly with my initial experiments I have so far only done continued pruning runs from the distilbert model, and I'm planning to do a set of runs for roberta-base in the future. I selected pruned checkpoints that kept performance roughly within 90% of the unpruned checkpoint's score. Timings and FLOPs were taken with synthetic worst case data (full context window every time). True performance would depend on the passage segmentation strategy for the corpus.
 
 | Model       | S  | heads | hdim | '21 NDCG@10 | '21 MAP     | '22 NDCG@10 | '22 MAP     | T(CPU) (ms)  | T(GPU) (ms) | FLOPs (est.) |
 | ----------- | -- | ----- | ---- | ----------- | ----------- | ----------- | ----------- | -----------  | ----------- | ------------ |
-| roberta-base| 5M | 144   | 3072 | 0.6461      | 0.2598      | ?.????      | ?.????      |              |             | 498.6        |
+| roberta-base| 5M | 144   | 3072 | 0.6461      | 0.2598      | 0.4672      | 0.1009      | 30187 +- 575 | 3627 +- 34  | 4.83T        |
 | distilbert  | 5M | 72    | 3072 | 0.6018      | 0.2477      | 0.4370      | 0.0982      | 14163 +- 129 | 1827 +- 17  | 2.42T        |
 | distilbert  | 10M| 18    | 3072 | 0.5399      | 0.2311      | 0.3738      | 0.0866      | 8788 +- 131  | 1502 +- 10  | 1.75T        |
 | distilbert  | 10M| 72    | 307  | 0.5827      | 0.2427      | 0.4248      | 0.0954      | 10287 +- 317 | 822 +- 17   | 1.33T        |
