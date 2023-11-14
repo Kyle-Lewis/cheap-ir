@@ -46,25 +46,9 @@ def train(args):
         batch_size=None
     )
 
-    # TODO move to args
-    corpus_root = "/media/kyle/ExternalNVME/Corpora/trec-msmarco-2023/"
-
-    queries_for_split = {
-        "2021": "2021_queries.tsv",
-        "2022": "2022_queries.tsv",
-    }
-
-    candidates_for_split = {
-        "2021": "2021_passage_top100_hydrated.parquet",
-        "2022": "2022_passage_top100_hydrated.parquet",
-    }
-
-    val_queries_f = corpus_root + queries_for_split[args.eval_split]
-    val_query_passages_f = corpus_root + candidates_for_split[args.eval_split]
-
     trec_val_dataset = TrecValidationDataset(
-        val_queries_f,
-        val_query_passages_f,
+        args.eval_queries_file,
+        args.eval_candidates_file,
         model_tag=args.model_tag
     )
 
@@ -129,7 +113,6 @@ def train(args):
 
         ### Manage Pruning State
         if (step >= args.num_warmup_steps - args.acc_steps) and (o_step + args.acc_steps) % args.prune_steps == 0:
-            print('acc')
             stage = "train+accumulate"
 
         elif (step >= args.num_warmup_steps - args.acc_steps) and (o_step % args.prune_steps == 0):
@@ -181,10 +164,10 @@ def train(args):
 
             loss = outputs.loss
             loss.backward()
-            optimizer.step()
-            scheduler.step()
-            optimizer.zero_grad()
-
+        
+        optimizer.step()
+        scheduler.step()
+        optimizer.zero_grad()
         seen_pairs += args.batch_size
 
 
@@ -220,6 +203,10 @@ def main():
         help="Output directory for further model checkpoints"
     )
     parser.add_argument(
+        "--eval_candidates_file", type=Path, required=True,
+        help="The candidates file for the TREC eval split to run on checkpoint."
+    )
+    parser.add_argument(
         "--seen-pairs", type=int, required=True,
         help="The number of training samples to skip as they have been seen." 
     )
@@ -239,11 +226,6 @@ def main():
         "--num_training_samples", type=int, required=True,
         help="The number of query passage pairs to train on.\n"\
              "Determines the number of training steps based on batch size."
-    )
-    
-    parser.add_argument(
-        "--eval-split", type=str, required=True,
-        help="Trec eval split to run on checkpoint."
     )
     
     # optional
@@ -271,6 +253,10 @@ def main():
         args.train_triples_file = \
             Path(__file__).absolute().parent.joinpath(args.train_triples_file)
 
+    if not os.path.isabs(args.eval_candidates_file):
+        args.eval_candidates_file = \
+            Path(__file__).absolute().parent.joinpath(args.eval_candidates_file)
+
     if not os.path.isabs(args.checkpoint_dir):
         args.checkpoint_dir = \
             Path(__file__).absolute().parent.joinpath(args.checkpoint_dir)
@@ -286,6 +272,14 @@ def main():
         raise argparse.ArgumentTypeError(
             "Invalid checkpoint directory:", args.checkpoint_dir)
     
+    if not (args.eval_candidates_file.exists() and args.eval_candidates_file.is_file()):
+        raise argparse.ArgumentTypeError(
+            "Invalid eval candidates file:", args.eval_candidates_file)
+    
+    eval_split = args.eval_candidates_file.stem.split('_')[0]
+    queries_name = "{}_queries.tsv".format(eval_split)
+    args.eval_queries_file = args.eval_candidates_file.parent.joinpath(queries_name)
+
     # determine model architecture from checkpoint
     with open(args.checkpoint_dir.joinpath("config.json"), "r") as config_file:
         model_config = json.loads(config_file.read())
@@ -336,7 +330,6 @@ def main():
 
     for arg, value in args.__dict__.items():
         print("{:>20} - {}".format(arg, value))
-
 
     # done with args
     ############################################################################

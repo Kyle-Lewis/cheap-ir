@@ -34,25 +34,9 @@ def train(args):
 
     model.to(args.device)
 
-    # TODO move to args
-    corpus_root = "/media/kyle/ExternalNVME/Corpora/trec-msmarco-2023/"
-
-    queries_for_split = {
-        "2021": "2021_queries.tsv",
-        "2022": "2022_queries.tsv",
-    }
-
-    candidates_for_split = {
-        "2021": "2021_passage_top100_hydrated.parquet",
-        "2022": "2022_passage_top100_hydrated.parquet",
-    }
-
-    val_queries_f = corpus_root + queries_for_split[args.eval_split]
-    val_query_passages_f = corpus_root + candidates_for_split[args.eval_split]
-
     trec_val_dataset = TrecValidationDataset(
-        val_queries_f,
-        val_query_passages_f,
+        args.eval_queries_file,
+        args.eval_candidates_file,
         model_tag=args.model_tag
     )
 
@@ -154,7 +138,7 @@ def train(args):
             torch.save(scheduler.state_dict(), model_output.joinpath("scheduler.pt"))
             print_status(step, total_steps, scheduler, start_time, checkpoint=model_output)
             trec_eval_run(model, trec_val_dataloader, model_output, split=args.eval_split)
-        
+
         ### Training
         batch = next(data)
 
@@ -215,7 +199,10 @@ def main():
         "--output_dir", type=Path, required=True,
         help="Output directory for model checkpoints"
     )
-
+    parser.add_argument(
+        "--eval_candidates_file", type=Path, required=True,
+        help="The candidates file for the TREC eval split to run on checkpoint."
+    )
     parser.add_argument(
         "--num_training_samples", type=int, required=True,
         help="The number of query passage pairs to train on.\n"\
@@ -224,10 +211,6 @@ def main():
     parser.add_argument(
         "--num_checkpoint_samples", type=int, required=True,
         help="The number of query passage pairs between checkpoints."
-    )
-    parser.add_argument(
-        "--eval_split", type=str, required=True,
-        help="Trec eval split to run on checkpoint."
     )
     
     # optional
@@ -250,19 +233,32 @@ def main():
         args.train_triples_file = \
             Path(__file__).absolute().parent.joinpath(args.train_triples_file)
 
+    if not os.path.isabs(args.eval_candidates_file):
+        args.eval_candidates_file = \
+            Path(__file__).absolute().parent.joinpath(args.eval_candidates_file)
+
     if not os.path.isabs(args.output_dir):
         args.output_dir = \
             Path(__file__).absolute().parent.joinpath(args.checkpoint_dir)
     
     if not os.path.isabs(args.output_dir):
         args.output_dir = Path(__file__).absolute().parent.joinpath(args.output_dir)
+    
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
 
     if not (args.train_triples_file.exists() and args.train_triples_file.is_file()):
         raise argparse.ArgumentTypeError(
             "Invalid train triples file:", args.train_triples_file)
+
+    if not (args.eval_candidates_file.exists() and args.eval_candidates_file.is_file()):
+        raise argparse.ArgumentTypeError(
+            "Invalid eval candidates file:", args.eval_candidates_file)
     
+    eval_split = args.eval_candidates_file.stem.split('_')[0]
+    queries_name = "{}_queries.tsv".format(eval_split)
+    args.eval_queries_file = args.eval_candidates_file.parent.joinpath(queries_name)
+
     if args.checkpoint_dir is not None:
         if not (args.checkpoint_dir.exists() and args.checkpoint_dir.is_dir()):
             raise argparse.ArgumentTypeError(

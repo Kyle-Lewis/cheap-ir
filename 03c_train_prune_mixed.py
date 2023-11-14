@@ -54,25 +54,9 @@ def train(args):
         batch_size=None
     )
 
-        # TODO move to args
-    corpus_root = "/media/kyle/ExternalNVME/Corpora/trec-msmarco-2023/"
-
-    queries_for_split = {
-        "2021": "2021_queries.tsv",
-        "2022": "2022_queries.tsv",
-    }
-
-    candidates_for_split = {
-        "2021": "2021_passage_top100_hydrated.parquet",
-        "2022": "2022_passage_top100_hydrated.parquet",
-    }
-
-    val_queries_f = corpus_root + queries_for_split[args.eval_split]
-    val_query_passages_f = corpus_root + candidates_for_split[args.eval_split]
-
     trec_val_dataset = TrecValidationDataset(
-        val_queries_f,
-        val_query_passages_f,
+        args.eval_queries_file,
+        args.eval_candidates_file,
         model_tag=args.model_tag
     )
 
@@ -161,7 +145,8 @@ def train(args):
     print("num_neurons:", num_neurons)
     print("num_pruned_neurons:", num_pruned_neurons)
     print("cur dim:", args.intermediate_hidden_dim - num_pruned_neurons)
-    print("true cur dim:", torch.sum(model.base_model.transformer.layer[-1].ffn.lin1.weight_mask[:, 0]))
+    if args.command == 'continue':
+        print("true cur dim:", torch.sum(model.base_model.transformer.layer[-1].ffn.lin1.weight_mask[:, 0]))
 
     model.train()
     start_time = time.time()
@@ -319,6 +304,10 @@ def main():
         help="Output directory for further model checkpoints"
     )
     from_initial_parser.add_argument(
+        "--eval_candidates_file", type=Path, required=True,
+        help="The candidates file for the TREC eval split to run on checkpoint."
+    )
+    from_initial_parser.add_argument(
         "--seen-pairs", type=int, required=True,
         help="The number of training samples to skip as they have been seen." 
     )
@@ -343,11 +332,7 @@ def main():
         help="The number of query passage pairs to train on.\n"\
              "Determines the number of training steps based on batch size."
     )
-    from_initial_parser.add_argument(
-        "--eval-split", type=str, required=True,
-        help="Trec eval split to run on checkpoint."
-    )
-    
+
     # optional
     from_initial_parser.add_argument(
         "--report_every", type=int, default=10000,
@@ -423,6 +408,18 @@ def main():
             raise argparse.ArgumentTypeError(
                 "Output directory already exists:", args.output_dir)
         
+        if not os.path.isabs(args.eval_candidates_file):
+            args.eval_candidates_file = \
+                Path(__file__).absolute().parent.joinpath(args.eval_candidates_file)
+        
+        if not (args.eval_candidates_file.exists() and args.eval_candidates_file.is_file()):
+            raise argparse.ArgumentTypeError(
+                "Invalid eval candidates file:", args.eval_candidates_file)
+
+        eval_split = args.eval_candidates_file.stem.split('_')[0]
+        queries_name = "{}_queries.tsv".format(eval_split)
+        args.eval_queries_file = args.eval_candidates_file.parent.joinpath(queries_name)
+
         # determine model architecture from initial checkpoint
         with open(args.checkpoint_dir.joinpath("config.json"), "r") as config_file:
             
@@ -472,12 +469,6 @@ def main():
                 else:
                     dct[k] = v
             argsfile.write(json.dumps(dct, indent=4))
-
-
-    # get device as available
-    # cpu = torch.device('cpu')
-    # gpu = torch.device('cuda')
-    # args.device = gpu if torch.cuda.is_available() else cpu
 
     for arg, value in args.__dict__.items():
         print("{:>20} - {}".format(arg, value))

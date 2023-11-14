@@ -1,10 +1,10 @@
 """
 torch.prune.remove() and the torch pruning module only *zeros* weights.
 
-This is fine during training, but when saving checkpoints and evaluating
-inference time I want to actually resize the matrices in such a way that the
-replacement is mathematically equivalent (and hopefully equivalent to floating
-point accuracy) requires fewer operations.
+This is fine during training, but when evaluating inference time I want to
+actually resize the matrices in such a way that the replacement is
+mathematically equivalent (and hopefully equivalent to floating point accuracy)
+and requires fewer operations.
 """
 import torch.nn.utils.prune as prune
 

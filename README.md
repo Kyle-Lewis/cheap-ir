@@ -126,37 +126,37 @@ python 02_train_initial.py
        --model_tag roberta-base
        --train_triples_file data/msmarco-v2/triples.train.small.tsv
        --output_dir models/roberta-base/initial-training/
+       --eval_candidates_file data/trec-msmarco-2023/2021_passage_top100_hydrated.parquet
        --num_training_samples 5000000
        --num_checkpoint_samples 500000
-       --eval_split 2021
 ```
 
 ### Continued training while pruning attention heads
 Running head pruning in isolation on the next 5M pairs, from a checkpoint which has been trained already on the first 5M pairs:
 
 ```shell
-python 03_train_prune_att_heads.py
+python 03a_train_prune_att_heads.py
       --checkpoint_dir models/reranking/distilbert-base-uncased/initial-training/seen_5000000 
       --train_triples_file data/msmarco-v2/triples.train.small.tsv
       --output_dir models/reranking/distilbert-base-uncased/head-pruning-from-5000000/
+      --eval_candidates_file data/trec-msmarco-2023/2021_passage_top100_hydrated.parquet
       --seen-pairs 5000000
       --target_sparsity 0.9
       --num_training_samples 5000000
-      --eval-split 2021
 ```
 
 ### Continued training while pruning intermediate layers
 Running intermediate structured pruning in isolation on the next 5M pairs, from a checkpoint which has been trained already on the first 5M pairs:
 
 ```shell
-python 03_train_prune_att_heads.py
+python 03b_train_prune_intermediates.py
       --checkpoint_dir models/reranking/distilbert-base-uncased/initial-training/seen_5000000 
       --train_triples_file data/msmarco-v2/triples.train.small.tsv
-      --output_dir models/reranking/distilbert-base-uncased/head-pruning-from-5000000/
+      --output_dir models/reranking/distilbert-base-uncased/intermediate-pruning-from-5000000/
+      --eval_candidates_file data/trec-msmarco-2023/2021_passage_top100_hydrated.parquet
       --seen-pairs 5000000
       --target_sparsity 0.9
       --num_training_samples 5000000
-      --eval-split 2021
 ```
 
 ### Continued training while using both pruning techniques
@@ -167,12 +167,12 @@ python 03c_train_prune_mixed.py initial
        --checkpoint_dir models/reranking/distilbert-base-uncased/initial-training/seen_5000000
        --train_triples_file data/msmarco-v2/triples.train.small.tsv
        --output_dir models/reranking/distilbert-base-uncased/mixed-pruning-from-5000000/
+       --eval_candidates_file data/trec-msmarco-2023/2021_passage_top100_hydrated.parquet
        --seen-pairs 5000000
        --target_sparsity 0.9
        --num_prune_cycles 54
        --num_warmup_samples 100000
        --num_training_samples 5000000
-       --eval-split 2021
 ```
 
 The remaining scripts and notebooks are for removing pruning masks and reshaping the corresponding linear layers for models which had neuron pruning applied to them, and for generating plots.
