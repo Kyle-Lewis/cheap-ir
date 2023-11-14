@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 def train(args):
 
-    if args.model_config["seen_pairs"]:
+    if "seen_pairs" in args.model_config:
         model = torch.load(args.checkpoint_dir.joinpath("model.pt"), map_location=args.device)
     
     else:
@@ -134,7 +134,8 @@ def train(args):
     print("next prune step:", args.prune_schedule[prune_cycle][0])
     print("num_pruned:", num_pruned)
     print("cur dim a:", start_dim - num_pruned)
-    print("true cur dim:", torch.sum(model.base_model.transformer.layer[-1].ffn.lin1.weight_mask[:, 0]))
+    if "seen_pairs" in args.model_config:
+        print("true cur dim:", torch.sum(model.base_model.transformer.layer[-1].ffn.lin1.weight_mask[:, 0]))
     
     data = iter(train_dataloader)
     
