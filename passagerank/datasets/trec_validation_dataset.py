@@ -1,13 +1,17 @@
 import csv
 
 from transformers import AutoTokenizer
-import pandas as pd
 import pyarrow.parquet as pq
 import torch
 
 class TrecValidationDataset(torch.utils.data.IterableDataset):
 
-    def __init__(self, queries_f, query_passages_f, model_tag):
+    def __init__(
+        self,
+        queries_f: str,
+        query_passages_f: str,
+        model_tag: str
+    ):
         super(TrecValidationDataset).__init__()
 
         # qid:passage:rank in RAM and grouped by qid

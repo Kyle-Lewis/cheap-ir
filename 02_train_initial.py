@@ -11,10 +11,9 @@ from transformers.trainer_pt_utils import get_parameter_names
 
 import torch
 from torch.optim import AdamW
-from torch.utils.data import DataLoader
 
 from passagerank.model_options import MODEL_OPTIONS
-from passagerank.datasets import TriplesDataset, TrecValidationDataset
+import passagerank.datasets as datasets
 from passagerank.trec_run import trec_eval_run
 
 
@@ -34,18 +33,12 @@ def train(args):
 
     model.to(args.device)
 
-    trec_val_dataset = TrecValidationDataset(
-        args.eval_queries_file,
-        args.eval_candidates_file,
-        model_tag=args.model_tag
-    )
-
-    trec_val_dataloader = DataLoader(
-        trec_val_dataset,
-        num_workers=1,
-        worker_init_fn=TrecValidationDataset.worker_init_fn,
-        batch_size=None
-    )
+    _eval_dataset, eval_dataloader = \
+        datasets.get_trec_validation_dataloader(
+            args.eval_queries_file,
+            args.eval_candidates_file,
+            args.model_tag
+        )
     
     weight_decay = 1e-2
 
@@ -106,19 +99,13 @@ def train(args):
         "lr:", scheduler.get_last_lr()[0],
     )
 
-    train_dataset = TriplesDataset(
-        args.train_triples_file,
-        model_tag=args.model_tag,
-        batch_size=args.batch_size,
-        num_seen=seen_pairs,
-    )
-
-    train_dataloader = DataLoader(
-        train_dataset,
-        num_workers=1,
-        worker_init_fn=TriplesDataset.worker_init_fn,
-        batch_size=None
-    )
+    _train_dataset, train_dataloader = \
+        datasets.get_triples_dataloader(
+            args.train_triples_file,
+            args.model_tag,
+            args.batch_size,
+            seen_pairs
+        )
 
     data = iter(train_dataloader)
     for step in range(start_step, total_steps):
@@ -133,20 +120,27 @@ def train(args):
         if (step > 0 and step != start_step and step % args.checkpoint_steps == 0) or step == 10000:
 
             model_output = args.output_dir.joinpath('seen_{:07}'.format(seen_pairs))
-            model.save_pretrained(model_output)
-            torch.save(optimizer.state_dict(), model_output.joinpath("optimizer.pt"))
-            torch.save(scheduler.state_dict(), model_output.joinpath("scheduler.pt"))
+            
+            if not args.dry_run:
+                model.save_pretrained(model_output)
+                torch.save(optimizer.state_dict(), model_output.joinpath("optimizer.pt"))
+                torch.save(scheduler.state_dict(), model_output.joinpath("scheduler.pt"))
+            
             print_status(step, total_steps, scheduler, start_time, checkpoint=model_output)
-            trec_eval_run(model, trec_val_dataloader, model_output, split=args.eval_split)
+
+            if not args.dry_run:
+                trec_eval_run(model, eval_dataloader, model_output, split=args.eval_split)
 
         ### Training
-        batch = next(data)
+        if not args.dry_run:
+            batch = next(data)
 
-        batch = {k: v.to(args.device) for k, v in batch.items()}
-        outputs = model(**batch)
+            batch = {k: v.to(args.device) for k, v in batch.items()}
+            outputs = model(**batch)
 
-        loss = outputs.loss
-        loss.backward()
+            loss = outputs.loss
+            loss.backward()
+
         optimizer.step()
         scheduler.step()
         optimizer.zero_grad()
@@ -154,11 +148,16 @@ def train(args):
         seen_pairs += args.batch_size
     
     model_output = args.output_dir.joinpath('seen_{:07}'.format(seen_pairs))
-    model.save_pretrained(model_output)
-    torch.save(optimizer.state_dict(), model_output.joinpath("optimizer.pt"))
-    torch.save(scheduler.state_dict(), model_output.joinpath("scheduler.pt"))
+
+    if not args.dry_run:
+        model.save_pretrained(model_output)
+        torch.save(optimizer.state_dict(), model_output.joinpath("optimizer.pt"))
+        torch.save(scheduler.state_dict(), model_output.joinpath("scheduler.pt"))
+
     print_status(step, total_steps, scheduler, start_time, checkpoint=model_output)
-    trec_eval_run(model, trec_val_dataloader, model_output, split=args.eval_split)
+
+    if not args.dry_run:
+        trec_eval_run(model, eval_dataloader, model_output, split=args.eval_split)
 
 
 def print_status(this_step, total_steps, scheduler, start_time, record=False, checkpoint=None):
@@ -222,7 +221,11 @@ def main():
         "-lr", "--learning-rate", type=float, default=3e-6,
         help="Learning rate to reach after warmup (default 3e-6)."
     )
-    
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Run without touching the model to see the status outputs that will result."\
+             "Used to evaluate whether the resulting schedule looks reasonable."
+    )
     args = parser.parse_args()
 
     # resolve relative paths and validate

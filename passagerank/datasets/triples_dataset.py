@@ -11,7 +11,8 @@ class TriplesDataset(torch.utils.data.IterableDataset):
         model_tag,
         batch_size,
         delimiter='\t',
-        num_seen=None):
+        offset=0
+    ):
         super(TriplesDataset).__init__()
 
         self.triples_f = triples_f
@@ -25,7 +26,7 @@ class TriplesDataset(torch.utils.data.IterableDataset):
         # Set by worker_init_fn
         self.tokenizer = None
 
-        self.num_seen = num_seen
+        self.offset = offset
 
     @staticmethod
     def worker_init_fn(worker_id):
@@ -45,7 +46,7 @@ class TriplesDataset(torch.utils.data.IterableDataset):
 
             for i, row in enumerate(reader):
                 
-                if self.num_seen is not None and i < self.num_seen:
+                if i < self.offset:
                     if i % (self.num_seen // 10) == 0:
                         print("Skipping: {}/{}".format(i, self.num_seen))
                     continue
@@ -89,3 +90,47 @@ class TriplesDataset(torch.utils.data.IterableDataset):
 
     def load_tokenizer(self):
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_tag)
+
+
+class TriplesDatasetForDPR(TriplesDataset):
+
+    def __iter__(self):
+
+        if self.tokenizer is None:
+            self.load_tokenizer()
+        
+        with open(self.triples_f, 'r') as infile:
+            reader = csv.reader(infile, delimiter=self.delimiter)
+            
+            queries = []
+            passages = []
+            labels = torch.zeros((self.batch_size, 2*self.batch_size))
+
+            for row in reader:
+
+                query, positive_passage, negative_passage = row
+                
+                labels[len(queries), len(passages)] = 1
+                queries.append(query)
+                passages.append(positive_passage)
+                passages.append(negative_passage)
+
+                if len(queries) == self.batch_size:
+
+                    q_inputs = self.tokenizer(
+                        queries,
+                        padding='longest',
+                        return_tensors='pt'
+                    )
+
+                    p_inputs = self.tokenizer(
+                        passages,
+                        padding='longest',
+                        return_tensors='pt'
+                    )
+
+                    yield q_inputs, p_inputs, labels
+
+                    queries = []
+                    passages = []
+                    labels = torch.zeros((self.batch_size, 2*self.batch_size))

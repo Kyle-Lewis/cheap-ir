@@ -12,10 +12,9 @@ from transformers.trainer_pt_utils import get_parameter_names
 
 import torch
 from torch.optim import AdamW
-from torch.utils.data import DataLoader
 
 from passagerank.model_options import MODEL_OPTIONS
-from passagerank.datasets import TriplesDataset, TrecValidationDataset
+import passagerank.datasets as datasets
 from passagerank.pruning.intermediate_pruning import (
     IntermediatesPruner,
     get_prune_schedule
@@ -42,32 +41,20 @@ def train(args):
     if "seen_pairs" in args.model_config:
         num_skip = args.model_config["seen_pairs"]
 
-    train_dataset = TriplesDataset(
-        args.train_triples_file,
-        model_tag=args.model_tag,
-        batch_size=args.batch_size,
-        num_seen=num_skip,
-    )
+    _train_dataset, train_dataloader = \
+        datasets.get_triples_dataloader(
+            args.train_triples_file,
+            args.model_tag,
+            args.batch_size,
+            num_skip
+        )
 
-    train_dataloader = DataLoader(
-        train_dataset,
-        num_workers=1,
-        worker_init_fn=TriplesDataset.worker_init_fn,
-        batch_size=None
-    )
-
-    trec_val_dataset = TrecValidationDataset(
-        args.eval_queries_file,
-        args.eval_candidates_file,
-        model_tag=args.model_tag
-    )
-
-    trec_val_dataloader = DataLoader(
-        trec_val_dataset,
-        num_workers=1,
-        worker_init_fn=TrecValidationDataset.worker_init_fn,
-        batch_size=None
-    )
+    _eval_dataset, eval_dataloader = \
+        datasets.get_trec_validation_dataloader(
+            args.eval_queries_file,
+            args.eval_candidates_file,
+            args.model_tag
+        )
     
     weight_decay = 1e-2
     # Excluding normalization layers and all biases from weight decay
@@ -163,7 +150,7 @@ def train(args):
 
                 print_status(step, total_steps, scheduler, start_time, num_pruned, checkpoint=model_output)
                 if not args.dry_run:
-                    trec_eval_run(model, trec_val_dataloader, model_output, split=args.eval_split)
+                    trec_eval_run(model, eval_dataloader, model_output, split=args.eval_split)
 
             if not args.dry_run:
                 intermediates_pruner.prune_intermediate_layers(amount=n_prune)
@@ -199,7 +186,7 @@ def train(args):
     
     print_status(step, total_steps, scheduler, start_time, num_pruned, checkpoint=model_output)
     if not args.dry_run:
-        trec_eval_run(model, trec_val_dataloader, model_output, split=args.eval_split)
+        trec_eval_run(model, eval_dataloader, model_output, split=args.eval_split)
 
 
 def print_status(this_step, total_steps, scheduler, start_time, n_pruned, record=False, checkpoint=None):
